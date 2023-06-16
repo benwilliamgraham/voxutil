@@ -64,7 +64,7 @@ class FileIter:
     def convert_string(string: str) -> bytes:
         """Convert a string to bytes"""
         bytes_ = len(string).to_bytes(4, "little")
-        bytes_ += bytes(string)
+        bytes_ += bytes(string, "utf-8")
         return bytes_
 
     def read_dict(self) -> dict:
@@ -303,6 +303,9 @@ class MainChunk(Chunk):
             child_content += bytes(model[0])
             child_content += bytes(model[1])
 
+        if self.palette is not None:
+            child_content += bytes(self.palette)
+
         for transform in self.transforms:
             child_content += bytes(transform)
 
@@ -329,9 +332,6 @@ class MainChunk(Chunk):
 
         if self.index_map is not None:
             child_content += bytes(self.index_map)
-
-        if self.palette is not None:
-            child_content += bytes(self.palette)
 
         return self.to_chunk_byte_format(b"", child_content)
 
@@ -551,6 +551,19 @@ class TransformChunk(Chunk):
             frames += [frame_attributes]
 
         return TransformChunk(node_id, attributes, child_node_id, layer_id, frames)
+    
+    def __bytes__(self):
+        content = FileIter.convert_int32(self.node_id)
+        content += FileIter.convert_dict(self.attributes)
+        content += FileIter.convert_int32(self.child_node_id)
+        content += FileIter.convert_int32(-1)
+        content += FileIter.convert_int32(self.layer_id)
+        content += FileIter.convert_int32(len(self.frames))
+
+        for frame in self.frames:
+            content += FileIter.convert_dict(frame)
+
+        return self.to_chunk_byte_format(content, b'')
 
 
 class GroupChunk(Chunk):
