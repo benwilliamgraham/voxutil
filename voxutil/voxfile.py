@@ -709,7 +709,16 @@ class LayerChunk(Chunk):
             raise ValueError(f"Invalid reserved id: {reserved_id}")
 
         return LayerChunk(layer_id, attribute)
+    
+    
+    def __bytes__(self):
+        content = FileIter.convert_int32(self.layer_id)
 
+        content += FileIter.convert_dict(self.attribute)
+
+        content += FileIter.convert_int32(-1)
+
+        return self.to_chunk_byte_format(content, b'')
 
 class RenderObjectChunk(Chunk):
     """Render Object chunk class.
