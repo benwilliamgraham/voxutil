@@ -234,3 +234,19 @@ class PaletteChunk(Chunk):
     def __init__(self, palette: list[tuple[int, int, int, int]]):
         """PaletteChunk constructor."""
         self.palette = palette
+
+    @classmethod
+    def read(cls, byte_iter: FileIter) -> "PaletteChunk":
+        cls.check_id(byte_iter)
+
+        cls.read_num_bytes(byte_iter)
+
+        palette = [(0, 0, 0, 0)]
+        for _ in range(255):
+            r = byte_iter.read_byte()
+            g = byte_iter.read_byte()
+            b = byte_iter.read_byte()
+            a = byte_iter.read_byte()
+            palette += [(r, g, b, a)]
+
+        return PaletteChunk(palette)
