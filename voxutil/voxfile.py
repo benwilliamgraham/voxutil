@@ -7,6 +7,45 @@ in a way that provides a more Pythonic interface than the raw .vox file format.
 """
 
 
+class FileIter:
+    """Iterator for raw .vox file bytes."""
+
+    def __init__(self, bytes_: bytes):
+        """FileIter constructor."""
+        self.bytes_ = bytes_
+        self.index = 0
+
+    def peek_byte(self) -> bytes:
+        """Peek at the next byte without advancing the iterator."""
+        return self.bytes_[self.index]
+
+    def read_byte(self) -> bytes:
+        """Read a single byte."""
+        byte = self.peek_byte()
+        self.index += 1
+        return byte
+    
+    def peek_bytes(self, n: int) -> bytes:
+        """Peek at the next n bytes without advancing the iterator."""
+        return self.bytes_[self.index : self.index + n]
+    
+    def read_bytes(self, n: int) -> bytes:
+        """Read n bytes."""
+        bytes_ = self.peek_bytes(n)
+        self.index += n
+        return bytes_
+    
+    def peek_int32(self) -> int:
+        """Peek at the next 32-bit integer without advancing the iterator."""
+        return int.from_bytes(self.peek_bytes(4), "little")
+    
+    def read_int32(self) -> int:
+        """Read a 32-bit integer."""
+        int32 = self.peek_int32()
+        self.index += 4
+        return int32
+
+
 class VoxFile:
     """VoxFile class."""
 
@@ -16,18 +55,18 @@ class VoxFile:
         self.main = main
 
     @staticmethod
-    def read(self, path: str) -> "VoxFile":
+    def read(path: str) -> "VoxFile":
         """Read a .vox file from the given path."""
         with open(path, "rb") as f:
-            byte_iter = iter(f.read())
+            byte_iter = FileIter(f.read())
 
-            header = b"".join([next(byte_iter) for _ in range(4)])
+            header = byte_iter.read_bytes(4)
             if header != b"VOX ":
                 raise ValueError("Invalid .vox file header.")
 
-            version = Int32.read(byte_iter)
+            version = byte_iter.read_int32()
 
-            main = Chunk.read(byte_iter, b"MAIN", MainContent)
+            main = MainChunk.read(byte_iter)
 
             return VoxFile(version, main)
 
@@ -36,20 +75,6 @@ class VoxFile:
         with open(path, "wb") as f:
             # TODO: Write the file to the given path.
             pass
-
-
-class Int32:
-    """Int32 class."""
-
-    @staticmethod
-    def read(byte_iter: iter) -> int:
-        """Read a 32-bit integer from the given byte iterator."""
-        return int.from_bytes(b"".join([next(byte_iter) for _ in range(4)]), "little")
-
-    @staticmethod
-    def write(value: int) -> bytes:
-        """Write a 32-bit integer to bytes."""
-        return value.to_bytes(4, "little")
 
 
 class Chunk:
@@ -61,10 +86,12 @@ class Chunk:
         """Chunk constructor."""
         self.children = children
 
-    @staticmethod
-    def read(byte_iter: iter, expected_id: bytes, content_class: type) -> "Chunk":
-        """Read a chunk from the given byte iterator."""
-        raise NotImplementedError()
+    @classmethod
+    def check_id(cls, byte_iter: FileIter):
+        """Check that the next four bytes in the given byte iterator match the chunk ID."""
+        id = byte_iter.read_bytes(4)
+        if id != cls.id:
+            raise ValueError(f"Invalid chunk ID: {id}; expected {cls.id}")
 
 
 class MainChunk(Chunk):
@@ -78,6 +105,11 @@ class MainChunk(Chunk):
         """MainChunk constructor."""
         self.models = models
         self.palette = palette
+
+    @classmethod
+    def read(cls, byte_iter: FileIter) -> "MainChunk":
+        """Read a main chunk from the given byte iterator."""
+        cls.check_id(byte_iter)
 
 
 class SizeChunk(Chunk):
