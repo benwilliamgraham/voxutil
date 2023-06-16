@@ -545,7 +545,7 @@ class MaterialChunk(Chunk):
         self.properties = properties
 
     @classmethod
-    def read(cls, file_iter : FileIter):
+    def read(cls, file_iter: FileIter):
         cls.consume_header(file_iter)
 
         material_id = file_iter.read_int32()
@@ -567,7 +567,7 @@ class LayerChunk(Chunk):
 
     id = b"LAYR"
 
-    def __init__(self, layer_id : int, attribute: dict):
+    def __init__(self, layer_id: int, attribute: dict):
         self.layer_id = layer_id
         self.attribute = attribute
 
@@ -582,7 +582,7 @@ class LayerChunk(Chunk):
         reserved_id = file_iter.read_int32()
         if reserved_id != -1:
             raise ValueError(f"Invalid reserved id: {reserved_id}")
-        
+
         return LayerChunk(layer_id, attribute)
 
 
@@ -649,6 +649,22 @@ class PaletteNoteChunk(Chunk):
 
     id = b"NOTE"
 
+    def __init__(self, color_names: list[str]):
+        self.color_names = color_names
+
+    @classmethod
+    def read(cls, file_iter: FileIter):
+        cls.consume_header()
+
+        color_names = []
+
+        num_color_names = file_iter.read_int32()
+
+        for _ in range(num_color_names):
+            color_names.append(file_iter.read_string())
+
+        return PaletteNoteChunk(color_names)
+
 
 class IndexMapChunk(Chunk):
     """Index Map chunk class.
@@ -661,3 +677,14 @@ class IndexMapChunk(Chunk):
     """
 
     id = b"IMAP"
+
+    def __init__(self, palette_indices: list[int]):
+        self.palette_indices = palette_indices
+
+    @classmethod
+    def read(cls, file_iter: FileIter):
+        cls.consume_header()
+
+        palette_indices = [file_iter.read_int32() for _ in range(256)]
+
+        return IndexMapChunk(palette_indices)
