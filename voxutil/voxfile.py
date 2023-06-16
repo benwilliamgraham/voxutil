@@ -133,10 +133,6 @@ class Chunk:
 
     id = None
 
-    def __init__(self, children: list["Chunk"]):
-        """Chunk constructor."""
-        self.children = children
-
     @classmethod
     def consume_header(cls, file_iter: FileIter):
         """Check that the next four bytes in the given byte iterator match the chunk ID."""
@@ -606,6 +602,18 @@ class GroupChunk(Chunk):
             child_node_ids += [child_node_id]
 
         return GroupChunk(node_id, attributes, child_node_ids)
+    
+    def __bytes__(self):
+        content = FileIter.convert_int32(self.layer_id)
+
+        content += FileIter.convert_dict(self.attribute)
+
+        content += FileIter.convert_int32(len(self.child_node_ids))
+
+        for child_node_id in self.child_node_ids:
+            content += FileIter.convert_int32(child_node_id)
+
+        return self.to_chunk_byte_format(content, b'')
 
 
 class ShapeChunk(Chunk):
