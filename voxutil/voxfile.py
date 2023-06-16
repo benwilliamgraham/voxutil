@@ -156,6 +156,8 @@ class MainChunk(Chunk):
         palette: Optional["PaletteChunk"],
         transforms: list["TransformChunk"],
         groups: list["GroupChunk"],
+        shapes: list["ShapeChunk"],
+        materials: list["MaterialChunk"],
     ):
         """MainChunk constructor."""
         self.pack = pack
@@ -163,6 +165,8 @@ class MainChunk(Chunk):
         self.palette = palette
         self.transforms = transforms
         self.groups = groups
+        self.shapes = shapes
+        self.materials = materials
 
     @classmethod
     def read(cls, byte_iter: FileIter) -> "MainChunk":
@@ -174,6 +178,8 @@ class MainChunk(Chunk):
         palette = None
         transforms = []
         groups = []
+        shapes = []
+        materials = []
 
         while byte_iter:
             id = byte_iter.peek_bytes(4)
@@ -200,10 +206,16 @@ class MainChunk(Chunk):
             elif id == GroupChunk.id:
                 group_chunk = GroupChunk.read(byte_iter)
                 groups += [group_chunk]
+            elif id == ShapeChunk.id:
+                shape_chunk = ShapeChunk.read(byte_iter)
+                shapes += [shape_chunk]
+            elif id == MaterialChunk.id:
+                material_chunk = MaterialChunk.read(byte_iter)
+                materials += [material_chunk]
             else:
                 raise ValueError(f"Invalid chunk ID: {id}")
 
-        return MainChunk(pack, models, palette)
+        return MainChunk(pack, models, palette, transforms, groups, shapes, materials)
 
 
 class PackChunk(Chunk):
@@ -434,4 +446,44 @@ class GroupChunk(Chunk):
 
         return GroupChunk(
             node_id, attributes, child_node_ids
+        )
+    
+
+class ShapeChunk(Chunk):
+    """Shape chunk class.
+
+    int32	: node id
+    DICT	: node attributes
+    int32 	: num of models (must be greater than 0)
+
+    // for each model
+    {
+    int32	: model id
+    DICT	: model attributes : reserved
+        (_f : int32)   frame index, start from 0
+    }xN
+    """
+
+    def __init__(self, node_id: int, attributes: dict, models: list[tuple[int, dict]]):
+        """ShapeChunk constructor."""
+        self.node_id = node_id
+        self.attributes = attributes
+        self.models = models
+
+    @classmethod
+    def read(cls, byte_iter: FileIter) -> "ShapeChunk":
+        cls.consume_header(byte_iter)
+
+        node_id = byte_iter.read_int32()
+        attributes = byte_iter.read_dict()
+        num_models = byte_iter.read_int32()
+
+        models = []
+        for _ in range(num_models):
+            model_id = byte_iter.read_int32()
+            model_attributes = byte_iter.read_dict()
+            models += [(model_id, model_attributes)]
+
+        return ShapeChunk(
+            node_id, attributes, models
         )
