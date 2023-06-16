@@ -729,6 +729,11 @@ class RenderObjectChunk(Chunk):
         attributes = file_iter.read_dict()
 
         return RenderObjectChunk(attributes)
+    
+    def __bytes__(self):
+        content = FileIter.convert_int32(self.attributes)
+
+        return self.to_chunk_byte_format(content, b'')
 
 
 class RenderCameraChunk(Chunk):
