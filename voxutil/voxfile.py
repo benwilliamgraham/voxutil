@@ -818,3 +818,11 @@ class IndexMapChunk(Chunk):
         ]
 
         return IndexMapChunk(palette_indices)
+
+    def __bytes__(self):
+        content = b''
+
+        for palette_index in self.palette_indices:
+            content += palette_index.to_bytes(1, "little")
+
+        return self.to_chunk_byte_format(content, b'')
