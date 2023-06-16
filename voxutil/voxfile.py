@@ -789,6 +789,14 @@ class PaletteNoteChunk(Chunk):
             color_names.append(file_iter.read_string())
 
         return PaletteNoteChunk(color_names)
+    
+    def __bytes__(self):
+        content = FileIter.convert_int32(len(self.color_names))
+
+        for color_name in self.color_names:
+            content += FileIter.convert_string(color_name)
+
+        return self.to_chunk_byte_format(content, b'')
 
 
 class IndexMapChunk(Chunk):
