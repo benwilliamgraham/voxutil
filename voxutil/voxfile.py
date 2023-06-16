@@ -574,6 +574,17 @@ class RenderObjectChunk(Chunk):
 
     id = b"rOBJ"
 
+    def __init__(self, attributes: dict):
+        self.attributes = attributes
+
+    @classmethod
+    def read(cls, file_iter: FileIter):
+        cls.consume_header()
+
+        attributes = file_iter.read_dict()
+
+        return RenderObjectChunk(attributes)
+
 
 class RenderCameraChunk(Chunk):
     """Render Camera chunk class.
