@@ -51,6 +51,25 @@ class FileIter:
         self.index += 4
         return int32
 
+    def read_string(self) -> str:
+        """Read a string."""
+        length = self.read_int32()
+        return self.read_bytes(length).decode("utf-8")
+
+    def read_dict(self) -> dict:
+        """Read a dictionary."""
+        length = self.read_int32()
+        dict_ = {}
+        for _ in range(length):
+            key = self.read_string()
+            value = self.read_string()
+            dict_[key] = value
+        return dict_
+
+    def read_rotation(self) -> int:
+        """Read a rotation."""
+        return ord(self.read_byte())
+
 
 class VoxFile:
     """VoxFile class."""
@@ -93,22 +112,40 @@ class Chunk:
         self.children = children
 
     @classmethod
-    def check_id(cls, byte_iter: FileIter):
+    def consume_header(cls, byte_iter: FileIter):
         """Check that the next four bytes in the given byte iterator match the chunk ID."""
         id = byte_iter.read_bytes(4)
         if id != cls.id:
             raise ValueError(f"Invalid chunk ID: {id}; expected {cls.id}")
 
-    @classmethod
-    def read_num_bytes(cls, byte_iter: FileIter) -> tuple[int, int]:
-        """Read the number of bytes in the chunk content and children."""
-        content_size = byte_iter.read_int32()
-        children_size = byte_iter.read_int32()
-        return content_size, children_size
+        byte_iter.read_int32()  # consume chunk content size
+        byte_iter.read_int32()  # consume child chunk size
 
 
 class MainChunk(Chunk):
-    """Main chunk class."""
+    """Main chunk class.
+
+    Chunk 'MAIN'
+    {
+        // pack of models
+        Chunk 'PACK'    : optional
+
+        // models
+        Chunk 'SIZE'
+        Chunk 'XYZI'
+
+        Chunk 'SIZE'
+        Chunk 'XYZI'
+
+        ...
+
+        Chunk 'SIZE'
+        Chunk 'XYZI'
+
+        // palette
+        Chunk 'RGBA'    : optional
+    }
+    """
 
     id = b"MAIN"
 
@@ -126,9 +163,7 @@ class MainChunk(Chunk):
     @classmethod
     def read(cls, byte_iter: FileIter) -> "MainChunk":
         """Read a main chunk from the given byte iterator."""
-        cls.check_id(byte_iter)
-
-        cls.read_num_bytes(byte_iter)
+        cls.consume_header(byte_iter)
 
         pack = None
         models = []
@@ -156,7 +191,14 @@ class MainChunk(Chunk):
 
 
 class PackChunk(Chunk):
-    """Pack chunk class."""
+    """Pack chunk class.
+
+    -------------------------------------------------------------------------------
+    # Bytes  | Type       | Value
+    -------------------------------------------------------------------------------
+    4        | int        | numModels : num of SIZE and XYZI chunks
+    -------------------------------------------------------------------------------
+    """
 
     id = b"PACK"
 
@@ -167,9 +209,7 @@ class PackChunk(Chunk):
     @classmethod
     def read(cls, byte_iter: FileIter) -> "PackChunk":
         """Read a pack chunk from the given byte iterator."""
-        cls.check_id(byte_iter)
-
-        cls.read_num_bytes(byte_iter)
+        cls.consume_header(byte_iter)
 
         num_models = byte_iter.read_int32()
 
@@ -177,7 +217,16 @@ class PackChunk(Chunk):
 
 
 class SizeChunk(Chunk):
-    """Size chunk class."""
+    """Size chunk class.
+
+    -------------------------------------------------------------------------------
+    # Bytes  | Type       | Value
+    -------------------------------------------------------------------------------
+    4        | int        | size x
+    4        | int        | size y
+    4        | int        | size z : gravity direction
+    -------------------------------------------------------------------------------
+    """
 
     id = b"SIZE"
 
@@ -187,9 +236,7 @@ class SizeChunk(Chunk):
 
     @classmethod
     def read(cls, byte_iter: FileIter) -> "SizeChunk":
-        cls.check_id(byte_iter)
-
-        cls.read_num_bytes(byte_iter)
+        cls.consume_header(byte_iter)
 
         x = byte_iter.read_int32()
         y = byte_iter.read_int32()
@@ -199,7 +246,15 @@ class SizeChunk(Chunk):
 
 
 class XYZIChunk(Chunk):
-    """XYZI chunk class."""
+    """XYZI chunk class.
+
+    -------------------------------------------------------------------------------
+    # Bytes  | Type       | Value
+    -------------------------------------------------------------------------------
+    4        | int        | numVoxels (N)
+    4 x N    | int        | (x, y, z, colorIndex) : 1 byte for each component
+    -------------------------------------------------------------------------------
+    """
 
     id = b"XYZI"
 
@@ -209,9 +264,7 @@ class XYZIChunk(Chunk):
 
     @classmethod
     def read(cls, byte_iter: FileIter) -> "XYZIChunk":
-        cls.check_id(byte_iter)
-
-        cls.read_num_bytes(byte_iter)
+        cls.consume_header(byte_iter)
 
         num_voxels = byte_iter.read_int32()
 
@@ -227,7 +280,20 @@ class XYZIChunk(Chunk):
 
 
 class PaletteChunk(Chunk):
-    """Palette chunk class."""
+    """Palette chunk class.
+
+    -------------------------------------------------------------------------------
+    # Bytes  | Type       | Value
+    -------------------------------------------------------------------------------
+    4 x 256  | int        | (R, G, B, A) : 1 byte for each component
+                        | * <NOTICE>
+                        | * color [0-254] are mapped to palette index [1-255], e.g :
+                        |
+                        | for ( int i = 0; i <= 254; i++ ) {
+                        |     palette[i + 1] = ReadRGBA();
+                        | }
+    -------------------------------------------------------------------------------
+    """
 
     id = b"RGBA"
 
@@ -237,9 +303,7 @@ class PaletteChunk(Chunk):
 
     @classmethod
     def read(cls, byte_iter: FileIter) -> "PaletteChunk":
-        cls.check_id(byte_iter)
-
-        cls.read_num_bytes(byte_iter)
+        cls.consume_header(byte_iter)
 
         palette = [(0, 0, 0, 0)]
         for _ in range(255):
@@ -250,3 +314,42 @@ class PaletteChunk(Chunk):
             palette += [(r, g, b, a)]
 
         return PaletteChunk(palette)
+
+
+class TransformChunk(Chunk):
+    """Transform chunk class.
+
+    int32	: node id
+    DICT	: node attributes
+        (_name : string)
+        (_hidden : 0/1)
+    int32 	: child node id
+    int32 	: reserved id (must be -1)
+    int32	: layer id
+    int32	: num of frames (must be greater than 0)
+
+    // for each frame
+    {
+    DICT	: frame attributes
+        (_r : int8)    ROTATION, see (c)
+        (_t : int32x3) translation
+        (_f : int32)   frame index, start from 0
+    }xN
+    """
+
+    id = b"nTRN"
+
+    def __init__(
+        self,
+        node_id: int,
+        attributes: dict,
+        child_node_id: int,
+        layer_id: int,
+        frames: list[dict],
+    ):
+        """TransformChunk constructor."""
+        self.node_id = node_id
+        self.attributes = attributes
+        self.child_node_id = child_node_id
+        self.layer_id = layer_id
+        self.frames = frames
