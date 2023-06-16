@@ -21,25 +21,23 @@ class FileIter:
         """Return whether the iterator has reached the end of the file."""
         return self.index < len(self.bytes_)
 
-    def peek_byte(self) -> bytes:
-        """Peek at the next byte without advancing the iterator."""
-        return self.bytes_[self.index]
-
-    def read_byte(self) -> bytes:
-        """Read a single byte."""
-        byte = self.peek_byte()
-        self.index += 1
-        return byte
-
     def peek_bytes(self, n: int) -> bytes:
         """Peek at the next n bytes without advancing the iterator."""
         return self.bytes_[self.index : self.index + n]
+    
+    def peek_byte(self) -> bytes:
+        """Peek at the next byte without advancing the iterator."""
+        return self.peek_bytes(1)
 
     def read_bytes(self, n: int) -> bytes:
         """Read n bytes."""
         bytes_ = self.peek_bytes(n)
         self.index += n
         return bytes_
+    
+    def read_byte(self) -> bytes:
+        """Read a single byte."""
+        return self.read_bytes(1)
 
     def peek_int32(self) -> int:
         """Peek at the next 32-bit integer without advancing the iterator."""
@@ -68,7 +66,7 @@ class FileIter:
 
     def read_rotation(self) -> int:
         """Read a rotation."""
-        return ord(self.read_byte())
+        return int.from_bytes(self.read_byte(), "little")
 
 
 class VoxFile:
@@ -349,9 +347,9 @@ class PaletteChunk(Chunk):
     """Palette chunk class.
 
     -------------------------------------------------------------------------------
-    # Bytes  | Type       | Value
+    # Bytes  | Type     | Value
     -------------------------------------------------------------------------------
-    4 x 256  | int        | (R, G, B, A) : 1 byte for each component
+    4 x 256  | int      | (R, G, B, A) : 1 byte for each component
                         | * <NOTICE>
                         | * color [0-254] are mapped to palette index [1-255], e.g :
                         |
@@ -378,6 +376,9 @@ class PaletteChunk(Chunk):
             b = file_iter.read_byte()
             a = file_iter.read_byte()
             palette += [(r, g, b, a)]
+
+        # for some reason, this still uses 256 bytes, so discard another 4 bytes afterwards
+        file_iter.read_bytes(4)
 
         return PaletteChunk(palette)
 
@@ -573,7 +574,7 @@ class LayerChunk(Chunk):
 
     @classmethod
     def read(cls, file_iter: FileIter):
-        cls.consume_header()
+        cls.consume_header(file_iter)
 
         layer_id = file_iter.read_int32()
 
@@ -599,7 +600,7 @@ class RenderObjectChunk(Chunk):
 
     @classmethod
     def read(cls, file_iter: FileIter):
-        cls.consume_header()
+        cls.consume_header(file_iter)
 
         attributes = file_iter.read_dict()
 
@@ -627,7 +628,7 @@ class RenderCameraChunk(Chunk):
 
     @classmethod
     def read(cls, file_iter: FileIter):
-        cls.consume_header()
+        cls.consume_header(file_iter)
 
         camera_id = file_iter.read_int32()
 
@@ -654,7 +655,7 @@ class PaletteNoteChunk(Chunk):
 
     @classmethod
     def read(cls, file_iter: FileIter):
-        cls.consume_header()
+        cls.consume_header(file_iter)
 
         color_names = []
 
@@ -674,6 +675,9 @@ class IndexMapChunk(Chunk):
     {
     int32	: palette index association
     }x256
+
+    NOTE: it appears that the documentation on this one is wrong, as each
+    palette index association seems to only be one byte.
     """
 
     id = b"IMAP"
@@ -683,8 +687,8 @@ class IndexMapChunk(Chunk):
 
     @classmethod
     def read(cls, file_iter: FileIter):
-        cls.consume_header()
+        cls.consume_header(file_iter)
 
-        palette_indices = [file_iter.read_int32() for _ in range(256)]
+        palette_indices = [int.from_bytes(file_iter.read_byte(), "little") for _ in range(256)]
 
         return IndexMapChunk(palette_indices)
