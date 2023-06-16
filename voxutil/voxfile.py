@@ -99,7 +99,7 @@ class FileIter:
 class VoxFile:
     """VoxFile class."""
 
-    def __init__(self, version: int, main: "Chunk"):
+    def __init__(self, version: int, main: "MainChunk"):
         """VoxFile constructor."""
         self.version = version
         self.main = main
