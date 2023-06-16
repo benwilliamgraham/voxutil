@@ -759,6 +759,13 @@ class RenderCameraChunk(Chunk):
         attribute = file_iter.read_dict()
 
         return RenderCameraChunk(camera_id, attribute)
+    
+    def __bytes__(self):
+        content = FileIter.convert_int32(self.camera_id)
+
+        content += FileIter.convert_dict(self.attribute)
+
+        return self.to_chunk_byte_format(content, b'')
 
 
 class PaletteNoteChunk(Chunk):
