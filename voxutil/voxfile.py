@@ -602,7 +602,7 @@ class GroupChunk(Chunk):
             child_node_ids += [child_node_id]
 
         return GroupChunk(node_id, attributes, child_node_ids)
-    
+
     def __bytes__(self):
         content = FileIter.convert_int32(self.layer_id)
 
@@ -613,7 +613,7 @@ class GroupChunk(Chunk):
         for child_node_id in self.child_node_ids:
             content += FileIter.convert_int32(child_node_id)
 
-        return self.to_chunk_byte_format(content, b'')
+        return self.to_chunk_byte_format(content, b"")
 
 
 class ShapeChunk(Chunk):
@@ -654,6 +654,19 @@ class ShapeChunk(Chunk):
             models += [(model_id, model_attributes)]
 
         return ShapeChunk(node_id, attributes, models)
+
+    def __bytes__(self):
+        content = FileIter.convert_int32(self.node_id)
+
+        content += FileIter.convert_dict(self.attributes)
+
+        content += FileIter.convert_int32(len(self.models))
+
+        for model in self.models:
+            content += FileIter.convert_int32(model[0])
+            content += FileIter.convert_dict(model[1])
+
+        return self.to_chunk_byte_format(content, b"")
 
 
 class MaterialChunk(Chunk):
