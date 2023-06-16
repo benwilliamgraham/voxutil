@@ -6,6 +6,7 @@ or modify .vox files, but rather to provide a way to read and write .vox files
 in a way that provides a more Pythonic interface than the raw .vox file format.
 """
 
+import io
 from typing import Optional
 
 
@@ -24,7 +25,7 @@ class FileIter:
     def peek_bytes(self, n: int) -> bytes:
         """Peek at the next n bytes without advancing the iterator."""
         return self.bytes_[self.index : self.index + n]
-    
+
     def peek_byte(self) -> bytes:
         """Peek at the next byte without advancing the iterator."""
         return self.peek_bytes(1)
@@ -34,7 +35,7 @@ class FileIter:
         bytes_ = self.peek_bytes(n)
         self.index += n
         return bytes_
-    
+
     def read_byte(self) -> bytes:
         """Read a single byte."""
         return self.read_bytes(1)
@@ -49,10 +50,22 @@ class FileIter:
         self.index += 4
         return int32
 
+    @staticmethod
+    def convert_int32(int32: int) -> bytes:
+        """Convert an int32 to bytes."""
+        return int32.to_bytes(4, "little", signed=True)
+
     def read_string(self) -> str:
         """Read a string."""
         length = self.read_int32()
         return self.read_bytes(length).decode("utf-8")
+
+    @staticmethod
+    def convert_string(string: str) -> bytes:
+        """Convert a string to bytes"""
+        bytes_ = len(string).to_bytes(4, "little")
+        bytes_ += bytes(string)
+        return bytes_
 
     def read_dict(self) -> dict:
         """Read a dictionary."""
@@ -64,9 +77,23 @@ class FileIter:
             dict_[key] = value
         return dict_
 
+    @staticmethod
+    def convert_dict(dict_: dict) -> bytes:
+        """Convert a dictionary to bytes."""
+        bytes_ = len(dict_).to_bytes(4, "little")
+        for key, value in dict_.items():
+            bytes_ += FileIter.convert_string(key)
+            bytes_ += FileIter.convert_string(value)
+        return bytes_
+
     def read_rotation(self) -> int:
         """Read a rotation."""
         return int.from_bytes(self.read_byte(), "little")
+
+    @staticmethod
+    def convert_rotation(r: int) -> bytes:
+        """Convert a rotation to bytes."""
+        return r.to_bytes(1)
 
 
 class VoxFile:
@@ -96,8 +123,9 @@ class VoxFile:
     def write(self, path: str):
         """Write a .vox file to the given path."""
         with open(path, "wb") as f:
-            # TODO: Write the file to the given path.
-            pass
+            f.write(b"VOX ")
+            f.write(FileIter.convert_int32(self.version))
+            f.write(bytes(self.main))
 
 
 class Chunk:
@@ -118,6 +146,18 @@ class Chunk:
 
         file_iter.read_int32()  # consume chunk content size
         file_iter.read_int32()  # consume child chunk size
+
+    def to_chunk_byte_format(self, content: bytes, child_content: bytes) -> bytes:
+        """Convert chunk to bytes"""
+        bytes_ = self.id
+
+        bytes_ += FileIter.convert_int32(len(content))
+        bytes_ += FileIter.convert_int32(len(child_content))
+
+        bytes_ += content
+        bytes_ += child_content
+
+        return bytes_
 
 
 class MainChunk(Chunk):
@@ -253,6 +293,29 @@ class MainChunk(Chunk):
             index_map,
         )
 
+    def __bytes__(self):
+        palette = None
+        transforms = []
+        groups = []
+        shapes = []
+        materials = []
+        layers = []
+        render_objects = []
+        render_cameras = []
+        palette_note = None
+        index_map = None
+
+        child_content = b""
+
+        if self.pack is not None:
+            child_content += bytes(self.pack)
+
+        for model in self.models:
+            child_content += bytes(model[0])
+            child_content += bytes(model[1])
+
+        return self.to_chunk_byte_format(b"", b"")
+
 
 class PackChunk(Chunk):
     """Pack chunk class.
@@ -307,6 +370,15 @@ class SizeChunk(Chunk):
         z = file_iter.read_int32()
 
         return SizeChunk((x, y, z))
+
+    def __bytes__(self):
+        content = (
+            FileIter.convert_int32(self.x)
+            + FileIter.convert_int32(self.y)
+            + FileIter.convert_int32(self.z)
+        )
+
+        return self.to_chunk_byte_format(content, b"")
 
 
 class XYZIChunk(Chunk):
@@ -689,6 +761,8 @@ class IndexMapChunk(Chunk):
     def read(cls, file_iter: FileIter):
         cls.consume_header(file_iter)
 
-        palette_indices = [int.from_bytes(file_iter.read_byte(), "little") for _ in range(256)]
+        palette_indices = [
+            int.from_bytes(file_iter.read_byte(), "little") for _ in range(256)
+        ]
 
         return IndexMapChunk(palette_indices)
