@@ -36,4 +36,20 @@ def test_read_write(model_path):
                 "files differ"
             )
 
-        # TODO: check that same values are contained
+        orig_byte_counts = {}
+        new_byte_counts = {}
+
+        for byte in orig_bytes:
+            if byte in orig_byte_counts:
+                orig_byte_counts[byte] += 1
+            else:
+                orig_byte_counts[byte] = 1
+
+        for byte in new_bytes:
+            if byte in new_byte_counts:
+                new_byte_counts[byte] += 1
+            else:
+                new_byte_counts[byte] = 1
+
+        if orig_byte_counts != new_byte_counts:
+            raise ValueError("Byte counts do not match")
