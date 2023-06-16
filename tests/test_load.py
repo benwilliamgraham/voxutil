@@ -9,6 +9,7 @@ for root, dirs, files in os.walk("tests/models"):
         if file.endswith(".vox"):
             MODEL_PATHS.append(os.path.join(root, file))
 
+
 @pytest.mark.parametrize("model_path", MODEL_PATHS)
 def test_load(model_path):
     vox_file = voxutil.VoxFile.read(model_path)

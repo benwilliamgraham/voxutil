@@ -6,6 +6,8 @@ or modify .vox files, but rather to provide a way to read and write .vox files
 in a way that provides a more Pythonic interface than the raw .vox file format.
 """
 
+from typing import Optional
+
 
 class FileIter:
     """Iterator for raw .vox file bytes."""
@@ -28,21 +30,21 @@ class FileIter:
         byte = self.peek_byte()
         self.index += 1
         return byte
-    
+
     def peek_bytes(self, n: int) -> bytes:
         """Peek at the next n bytes without advancing the iterator."""
         return self.bytes_[self.index : self.index + n]
-    
+
     def read_bytes(self, n: int) -> bytes:
         """Read n bytes."""
         bytes_ = self.peek_bytes(n)
         self.index += n
         return bytes_
-    
+
     def peek_int32(self) -> int:
         """Peek at the next 32-bit integer without advancing the iterator."""
         return int.from_bytes(self.peek_bytes(4), "little")
-    
+
     def read_int32(self) -> int:
         """Read a 32-bit integer."""
         int32 = self.peek_int32()
@@ -96,7 +98,7 @@ class Chunk:
         id = byte_iter.read_bytes(4)
         if id != cls.id:
             raise ValueError(f"Invalid chunk ID: {id}; expected {cls.id}")
-        
+
     @classmethod
     def read_num_bytes(cls, byte_iter: FileIter) -> tuple[int, int]:
         """Read the number of bytes in the chunk content and children."""
@@ -111,9 +113,13 @@ class MainChunk(Chunk):
     id = b"MAIN"
 
     def __init__(
-        self, models: list[tuple["SizeChunk", "XYZIChunk"]], palette: "PaletteChunk"
+        self,
+        pack: Optional["PackChunk"],
+        models: list[tuple["SizeChunk", "XYZIChunk"]],
+        palette: Optional["PaletteChunk"],
     ):
         """MainChunk constructor."""
+        self.pack = pack
         self.models = models
         self.palette = palette
 
@@ -124,24 +130,50 @@ class MainChunk(Chunk):
 
         cls.read_num_bytes(byte_iter)
 
+        pack = None
         models = []
         palette = None
 
         while byte_iter:
             id = byte_iter.peek_bytes(4)
-            
+
             if id == SizeChunk.id:
                 size_chunk = SizeChunk.read(byte_iter)
 
                 # assume next chunk is XYZI chunk
                 id = byte_iter.peek_bytes(4)
                 if id != XYZIChunk.id:
-                    raise ValueError(f"Invalid chunk ID: {id}; expected {XYZIChunk.id} following {SizeChunk.id}")
+                    raise ValueError(
+                        f"Invalid chunk ID: {id}; expected {XYZIChunk.id} following {SizeChunk.id}"
+                    )
                 xyzi_chunk = XYZIChunk.read(byte_iter)
 
                 models += [(size_chunk, xyzi_chunk)]
             else:
                 raise ValueError(f"Invalid chunk ID: {id}")
+
+        return MainChunk(pack, models, palette)
+
+
+class PackChunk(Chunk):
+    """Pack chunk class."""
+
+    id = b"PACK"
+
+    def __init__(self, num_models: int):
+        """PackChunk constructor."""
+        self.num_models = num_models
+
+    @classmethod
+    def read(cls, byte_iter: FileIter) -> "PackChunk":
+        """Read a pack chunk from the given byte iterator."""
+        cls.check_id(byte_iter)
+
+        cls.read_num_bytes(byte_iter)
+
+        num_models = byte_iter.read_int32()
+
+        return PackChunk(num_models)
 
 
 class SizeChunk(Chunk):
@@ -156,7 +188,7 @@ class SizeChunk(Chunk):
     @classmethod
     def read(cls, byte_iter: FileIter) -> "SizeChunk":
         cls.check_id(byte_iter)
-        
+
         cls.read_num_bytes(byte_iter)
 
         x = byte_iter.read_int32()
