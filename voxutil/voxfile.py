@@ -192,6 +192,7 @@ class MainChunk(Chunk):
         groups: list["GroupChunk"],
         shapes: list["ShapeChunk"],
         materials: list["MaterialChunk"],
+        layers: list["LayerChunk"],
         render_objects: list["RenderObjectChunk"],
         render_cameras: list["RenderCameraChunk"],
         palette_note: Optional["PaletteNoteChunk"],
@@ -205,6 +206,7 @@ class MainChunk(Chunk):
         self.groups = groups
         self.shapes = shapes
         self.materials = materials
+        self.layers = layers
         self.render_objects = render_objects
         self.render_cameras = render_cameras
         self.palette_note = palette_note
@@ -264,7 +266,7 @@ class MainChunk(Chunk):
                 layers += [layer_chunk]
             elif id == RenderObjectChunk.id:
                 render_object = RenderObjectChunk.read(file_iter)
-                render_objects += [render_objects]
+                render_objects += [render_object]
             elif id == RenderCameraChunk.id:
                 render_camera = RenderCameraChunk.read(file_iter)
                 render_cameras += [render_camera]
@@ -283,6 +285,7 @@ class MainChunk(Chunk):
             groups,
             shapes,
             materials,
+            layers,
             render_objects,
             render_cameras,
             palette_note,
@@ -481,7 +484,7 @@ class PaletteChunk(Chunk):
     def __bytes__(self):
         content = b""
 
-        for color in self.palette:
+        for color in self.palette[1:]:
             for val in color:
                 content += val.to_bytes(1, "little")
 
@@ -604,9 +607,9 @@ class GroupChunk(Chunk):
         return GroupChunk(node_id, attributes, child_node_ids)
 
     def __bytes__(self):
-        content = FileIter.convert_int32(self.layer_id)
+        content = FileIter.convert_int32(self.node_id)
 
-        content += FileIter.convert_dict(self.attribute)
+        content += FileIter.convert_dict(self.attributes)
 
         content += FileIter.convert_int32(len(self.child_node_ids))
 
@@ -768,7 +771,7 @@ class RenderObjectChunk(Chunk):
         return RenderObjectChunk(attributes)
 
     def __bytes__(self):
-        content = FileIter.convert_int32(self.attributes)
+        content = FileIter.convert_dict(self.attributes)
 
         return self.to_chunk_byte_format(content, b"")
 
