@@ -538,6 +538,20 @@ class MaterialChunk(Chunk):
 
     id = b"MATL"
 
+    def __init__(self, material_id: int, properties: dict):
+        self.material_id = material_id
+        self.properties = properties
+
+    @classmethod
+    def read(cls, file_iter : FileIter):
+        cls.consume_header(file_iter)
+
+        material_id = file_iter.read_int32()
+
+        properties = file_iter.read_dict()
+
+        return MaterialChunk(material_id, properties)
+
 
 class LayerChunk(Chunk):
     """Layer chunk class.
