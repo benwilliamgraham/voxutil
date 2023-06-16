@@ -93,7 +93,7 @@ class FileIter:
     @staticmethod
     def convert_rotation(r: int) -> bytes:
         """Convert a rotation to bytes."""
-        return r.to_bytes(1)
+        return r.to_bytes(1, "little")
 
 
 class VoxFile:
@@ -314,7 +314,7 @@ class MainChunk(Chunk):
             child_content += bytes(model[0])
             child_content += bytes(model[1])
 
-        return self.to_chunk_byte_format(b"", b"")
+        return self.to_chunk_byte_format(b"", child_content)
 
 
 class PackChunk(Chunk):
@@ -373,9 +373,9 @@ class SizeChunk(Chunk):
 
     def __bytes__(self):
         content = (
-            FileIter.convert_int32(self.x)
-            + FileIter.convert_int32(self.y)
-            + FileIter.convert_int32(self.z)
+            FileIter.convert_int32(self.size[0])
+            + FileIter.convert_int32(self.size[1])
+            + FileIter.convert_int32(self.size[2])
         )
 
         return self.to_chunk_byte_format(content, b"")
@@ -406,13 +406,22 @@ class XYZIChunk(Chunk):
 
         voxels = []
         for _ in range(num_voxels):
-            x = file_iter.read_byte()
-            y = file_iter.read_byte()
-            z = file_iter.read_byte()
-            color_index = file_iter.read_byte()
+            x = int.from_bytes(file_iter.read_byte(), "little")
+            y = int.from_bytes(file_iter.read_byte(), "little")
+            z = int.from_bytes(file_iter.read_byte(), "little")
+            color_index = int.from_bytes(file_iter.read_byte(), "little")
             voxels += [(x, y, z, color_index)]
 
         return XYZIChunk(voxels)
+
+    def __bytes__(self):
+        content = FileIter.convert_int32(len(self.voxels))
+
+        for voxel in self.voxels:
+            for val in voxel:
+                content += val.to_bytes(1, "little")
+
+        return self.to_chunk_byte_format(content, b"")
 
 
 class PaletteChunk(Chunk):
