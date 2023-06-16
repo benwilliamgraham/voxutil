@@ -551,7 +551,7 @@ class TransformChunk(Chunk):
             frames += [frame_attributes]
 
         return TransformChunk(node_id, attributes, child_node_id, layer_id, frames)
-    
+
     def __bytes__(self):
         content = FileIter.convert_int32(self.node_id)
         content += FileIter.convert_dict(self.attributes)
@@ -563,7 +563,7 @@ class TransformChunk(Chunk):
         for frame in self.frames:
             content += FileIter.convert_dict(frame)
 
-        return self.to_chunk_byte_format(content, b'')
+        return self.to_chunk_byte_format(content, b"")
 
 
 class GroupChunk(Chunk):
@@ -679,6 +679,13 @@ class MaterialChunk(Chunk):
 
         return MaterialChunk(material_id, properties)
 
+    def __bytes__(self):
+        content = FileIter.convert_int32(self.material_id)
+
+        content += FileIter.convert_dict(self.properties)
+
+        return self.to_chunk_byte_format(content, b"")
+
 
 class LayerChunk(Chunk):
     """Layer chunk class.
@@ -709,8 +716,7 @@ class LayerChunk(Chunk):
             raise ValueError(f"Invalid reserved id: {reserved_id}")
 
         return LayerChunk(layer_id, attribute)
-    
-    
+
     def __bytes__(self):
         content = FileIter.convert_int32(self.layer_id)
 
@@ -718,7 +724,8 @@ class LayerChunk(Chunk):
 
         content += FileIter.convert_int32(-1)
 
-        return self.to_chunk_byte_format(content, b'')
+        return self.to_chunk_byte_format(content, b"")
+
 
 class RenderObjectChunk(Chunk):
     """Render Object chunk class.
@@ -738,11 +745,11 @@ class RenderObjectChunk(Chunk):
         attributes = file_iter.read_dict()
 
         return RenderObjectChunk(attributes)
-    
+
     def __bytes__(self):
         content = FileIter.convert_int32(self.attributes)
 
-        return self.to_chunk_byte_format(content, b'')
+        return self.to_chunk_byte_format(content, b"")
 
 
 class RenderCameraChunk(Chunk):
@@ -773,13 +780,13 @@ class RenderCameraChunk(Chunk):
         attribute = file_iter.read_dict()
 
         return RenderCameraChunk(camera_id, attribute)
-    
+
     def __bytes__(self):
         content = FileIter.convert_int32(self.camera_id)
 
         content += FileIter.convert_dict(self.attribute)
 
-        return self.to_chunk_byte_format(content, b'')
+        return self.to_chunk_byte_format(content, b"")
 
 
 class PaletteNoteChunk(Chunk):
@@ -810,14 +817,14 @@ class PaletteNoteChunk(Chunk):
             color_names.append(file_iter.read_string())
 
         return PaletteNoteChunk(color_names)
-    
+
     def __bytes__(self):
         content = FileIter.convert_int32(len(self.color_names))
 
         for color_name in self.color_names:
             content += FileIter.convert_string(color_name)
 
-        return self.to_chunk_byte_format(content, b'')
+        return self.to_chunk_byte_format(content, b"")
 
 
 class IndexMapChunk(Chunk):
@@ -849,9 +856,9 @@ class IndexMapChunk(Chunk):
         return IndexMapChunk(palette_indices)
 
     def __bytes__(self):
-        content = b''
+        content = b""
 
         for palette_index in self.palette_indices:
             content += palette_index.to_bytes(1, "little")
 
-        return self.to_chunk_byte_format(content, b'')
+        return self.to_chunk_byte_format(content, b"")

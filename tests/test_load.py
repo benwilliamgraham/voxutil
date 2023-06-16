@@ -35,5 +35,5 @@ def test_read_write(model_path):
                 f"and original ({len(orig_bytes)}) "
                 "files differ"
             )
-        
+
         # TODO: check that same values are contained
