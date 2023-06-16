@@ -209,8 +209,8 @@ class MainChunk(Chunk):
         self.groups = groups
         self.shapes = shapes
         self.materials = materials
-        self.render_object = render_objects
-        self.render_camera = render_cameras
+        self.render_objects = render_objects
+        self.render_cameras = render_cameras
         self.palette_note = palette_note
         self.index_map = index_map
 
@@ -294,17 +294,6 @@ class MainChunk(Chunk):
         )
 
     def __bytes__(self):
-        palette = None
-        transforms = []
-        groups = []
-        shapes = []
-        materials = []
-        layers = []
-        render_objects = []
-        render_cameras = []
-        palette_note = None
-        index_map = None
-
         child_content = b""
 
         if self.pack is not None:
@@ -313,6 +302,36 @@ class MainChunk(Chunk):
         for model in self.models:
             child_content += bytes(model[0])
             child_content += bytes(model[1])
+
+        for transform in self.transforms:
+            child_content += bytes(transform)
+
+        for group in self.groups:
+            child_content += bytes(group)
+
+        for shape in self.shapes:
+            child_content += bytes(shape)
+
+        for material in self.materials:
+            child_content += bytes(material)
+
+        for layer in self.layers:
+            child_content += bytes(layer)
+
+        for render_object in self.render_objects:
+            child_content += bytes(render_object)
+
+        for render_camera in self.render_cameras:
+            child_content += bytes(render_camera)
+
+        if self.palette_note is not None:
+            child_content += bytes(self.palette_note)
+
+        if self.index_map is not None:
+            child_content += bytes(self.index_map)
+
+        if self.palette is not None:
+            child_content += bytes(self.palette)
 
         return self.to_chunk_byte_format(b"", child_content)
 
@@ -452,16 +471,27 @@ class PaletteChunk(Chunk):
 
         palette = [(0, 0, 0, 0)]
         for _ in range(255):
-            r = file_iter.read_byte()
-            g = file_iter.read_byte()
-            b = file_iter.read_byte()
-            a = file_iter.read_byte()
+            r = int.from_bytes(file_iter.read_byte(), "little")
+            g = int.from_bytes(file_iter.read_byte(), "little")
+            b = int.from_bytes(file_iter.read_byte(), "little")
+            a = int.from_bytes(file_iter.read_byte(), "little")
             palette += [(r, g, b, a)]
 
         # for some reason, this still uses 256 bytes, so discard another 4 bytes afterwards
         file_iter.read_bytes(4)
 
         return PaletteChunk(palette)
+
+    def __bytes__(self):
+        content = b""
+
+        for color in self.palette:
+            for val in color:
+                content += val.to_bytes(1, "little")
+
+        content += (0).to_bytes(4, "little")
+
+        return self.to_chunk_byte_format(content, b"")
 
 
 class TransformChunk(Chunk):
