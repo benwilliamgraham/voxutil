@@ -43,7 +43,7 @@ class FileIter:
 
     def peek_int32(self) -> int:
         """Peek at the next 32-bit integer without advancing the iterator."""
-        return int.from_bytes(self.peek_bytes(4), "little")
+        return int.from_bytes(self.peek_bytes(4), "little", signed=True)
 
     def read_int32(self) -> int:
         """Read a 32-bit integer."""
@@ -154,11 +154,15 @@ class MainChunk(Chunk):
         pack: Optional["PackChunk"],
         models: list[tuple["SizeChunk", "XYZIChunk"]],
         palette: Optional["PaletteChunk"],
+        transforms: list["TransformChunk"],
+        groups: list["GroupChunk"],
     ):
         """MainChunk constructor."""
         self.pack = pack
         self.models = models
         self.palette = palette
+        self.transforms = transforms
+        self.groups = groups
 
     @classmethod
     def read(cls, byte_iter: FileIter) -> "MainChunk":
@@ -168,11 +172,15 @@ class MainChunk(Chunk):
         pack = None
         models = []
         palette = None
+        transforms = []
+        groups = []
 
         while byte_iter:
             id = byte_iter.peek_bytes(4)
 
-            if id == SizeChunk.id:
+            if id == PackChunk.id:
+                pack = PackChunk.read(byte_iter)
+            elif id == SizeChunk.id:
                 size_chunk = SizeChunk.read(byte_iter)
 
                 # assume next chunk is XYZI chunk
@@ -184,6 +192,14 @@ class MainChunk(Chunk):
                 xyzi_chunk = XYZIChunk.read(byte_iter)
 
                 models += [(size_chunk, xyzi_chunk)]
+            elif id == PaletteChunk.id:
+                palette = PaletteChunk.read(byte_iter)
+            elif id == TransformChunk.id:
+                transform_chunk = TransformChunk.read(byte_iter)
+                transforms += [transform_chunk]
+            elif id == GroupChunk.id:
+                group_chunk = GroupChunk.read(byte_iter)
+                groups += [group_chunk]
             else:
                 raise ValueError(f"Invalid chunk ID: {id}")
 
@@ -353,3 +369,69 @@ class TransformChunk(Chunk):
         self.child_node_id = child_node_id
         self.layer_id = layer_id
         self.frames = frames
+
+    @classmethod
+    def read(cls, byte_iter: FileIter) -> "TransformChunk":
+        cls.consume_header(byte_iter)
+
+        node_id = byte_iter.read_int32()
+        attributes = byte_iter.read_dict()
+        child_node_id = byte_iter.read_int32()
+        reserved_id = byte_iter.read_int32()
+        if reserved_id != -1:
+            raise ValueError(f"Invalid reserved id: {reserved_id}")
+        layer_id = byte_iter.read_int32()
+        num_frames = byte_iter.read_int32()
+
+        frames = []
+        for _ in range(num_frames):
+            frame_attributes = byte_iter.read_dict()
+            frames += [frame_attributes]
+
+        return TransformChunk(
+            node_id, attributes, child_node_id, layer_id, frames
+        )
+    
+
+class GroupChunk(Chunk):
+    """Group chunk class.
+
+    int32	: node id
+    DICT	: node attributes
+    int32 	: num of children nodes
+
+    // for each child
+    {
+    int32	: child node id
+    }xN
+    """
+
+    id = b"nGRP"
+
+    def __init__(
+        self,
+        node_id: int,
+        attributes: dict,
+        child_node_ids: list[int],
+    ):
+        """GroupChunk constructor."""
+        self.node_id = node_id
+        self.attributes = attributes
+        self.child_node_ids = child_node_ids
+
+    @classmethod
+    def read(cls, byte_iter: FileIter) -> "GroupChunk":
+        cls.consume_header(byte_iter)
+
+        node_id = byte_iter.read_int32()
+        attributes = byte_iter.read_dict()
+        num_children = byte_iter.read_int32()
+
+        child_node_ids = []
+        for _ in range(num_children):
+            child_node_id = byte_iter.read_int32()
+            child_node_ids += [child_node_id]
+
+        return GroupChunk(
+            node_id, attributes, child_node_ids
+        )
