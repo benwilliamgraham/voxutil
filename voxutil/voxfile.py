@@ -158,8 +158,8 @@ class MainChunk(Chunk):
         groups: list["GroupChunk"],
         shapes: list["ShapeChunk"],
         materials: list["MaterialChunk"],
-        render_object: Optional["RenderObjectChunk"],
-        render_camera: Optional["RenderCameraChunk"],
+        render_objects: list["RenderObjectChunk"],
+        render_cameras: list["RenderCameraChunk"],
         palette_note: Optional["PaletteNoteChunk"],
         index_map: Optional["IndexMapChunk"],
     ):
@@ -171,8 +171,8 @@ class MainChunk(Chunk):
         self.groups = groups
         self.shapes = shapes
         self.materials = materials
-        self.render_object = render_object
-        self.render_camera = render_camera
+        self.render_object = render_objects
+        self.render_camera = render_cameras
         self.palette_note = palette_note
         self.index_map = index_map
 
@@ -189,8 +189,8 @@ class MainChunk(Chunk):
         shapes = []
         materials = []
         layers = []
-        render_object = None
-        render_camera = None
+        render_objects = []
+        render_cameras = []
         palette_note = None
         index_map = None
 
@@ -230,8 +230,10 @@ class MainChunk(Chunk):
                 layers += [layer_chunk]
             elif id == RenderObjectChunk.id:
                 render_object = RenderObjectChunk.read(file_iter)
+                render_objects += [render_objects]
             elif id == RenderCameraChunk.id:
                 render_camera = RenderCameraChunk.read(file_iter)
+                render_cameras += [render_camera]
             elif id == PaletteNoteChunk.id:
                 palette_note = PaletteNoteChunk.read(file_iter)
             elif id == IndexMapChunk.id:
@@ -247,8 +249,8 @@ class MainChunk(Chunk):
             groups,
             shapes,
             materials,
-            render_object,
-            render_camera,
+            render_objects,
+            render_cameras,
             palette_note,
             index_map,
         )
@@ -618,6 +620,20 @@ class RenderCameraChunk(Chunk):
     """
 
     id = b"rCAM"
+
+    def __init__(self, camera_id: int, attribute: dict):
+        self.camera_id = camera_id
+        self.attribute = attribute
+
+    @classmethod
+    def read(cls, file_iter: FileIter):
+        cls.consume_header()
+
+        camera_id = file_iter.read_int32()
+
+        attribute = file_iter.read_dict()
+
+        return RenderCameraChunk(camera_id, attribute)
 
 
 class PaletteNoteChunk(Chunk):
