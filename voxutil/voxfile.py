@@ -15,6 +15,10 @@ class FileIter:
         self.bytes_ = bytes_
         self.index = 0
 
+    def __bool__(self):
+        """Return whether the iterator has reached the end of the file."""
+        return self.index < len(self.bytes_)
+
     def peek_byte(self) -> bytes:
         """Peek at the next byte without advancing the iterator."""
         return self.bytes_[self.index]
@@ -80,7 +84,7 @@ class VoxFile:
 class Chunk:
     """Chunk class."""
 
-    id = b""
+    id = None
 
     def __init__(self, children: list["Chunk"]):
         """Chunk constructor."""
@@ -92,6 +96,13 @@ class Chunk:
         id = byte_iter.read_bytes(4)
         if id != cls.id:
             raise ValueError(f"Invalid chunk ID: {id}; expected {cls.id}")
+        
+    @classmethod
+    def read_num_bytes(cls, byte_iter: FileIter) -> tuple[int, int]:
+        """Read the number of bytes in the chunk content and children."""
+        content_size = byte_iter.read_int32()
+        children_size = byte_iter.read_int32()
+        return content_size, children_size
 
 
 class MainChunk(Chunk):
@@ -111,6 +122,27 @@ class MainChunk(Chunk):
         """Read a main chunk from the given byte iterator."""
         cls.check_id(byte_iter)
 
+        cls.read_num_bytes(byte_iter)
+
+        models = []
+        palette = None
+
+        while byte_iter:
+            id = byte_iter.peek_bytes(4)
+            
+            if id == SizeChunk.id:
+                size_chunk = SizeChunk.read(byte_iter)
+
+                # assume next chunk is XYZI chunk
+                id = byte_iter.peek_bytes(4)
+                if id != XYZIChunk.id:
+                    raise ValueError(f"Invalid chunk ID: {id}; expected {XYZIChunk.id} following {SizeChunk.id}")
+                xyzi_chunk = XYZIChunk.read(byte_iter)
+
+                models += [(size_chunk, xyzi_chunk)]
+            else:
+                raise ValueError(f"Invalid chunk ID: {id}")
+
 
 class SizeChunk(Chunk):
     """Size chunk class."""
@@ -121,6 +153,18 @@ class SizeChunk(Chunk):
         """SizeChunk constructor."""
         self.size = size
 
+    @classmethod
+    def read(cls, byte_iter: FileIter) -> "SizeChunk":
+        cls.check_id(byte_iter)
+        
+        cls.read_num_bytes(byte_iter)
+
+        x = byte_iter.read_int32()
+        y = byte_iter.read_int32()
+        z = byte_iter.read_int32()
+
+        return SizeChunk((x, y, z))
+
 
 class XYZIChunk(Chunk):
     """XYZI chunk class."""
@@ -130,6 +174,24 @@ class XYZIChunk(Chunk):
     def __init__(self, voxels: list[tuple[int, int, int, int]]):
         """XYZIChunk constructor."""
         self.voxels = voxels
+
+    @classmethod
+    def read(cls, byte_iter: FileIter) -> "XYZIChunk":
+        cls.check_id(byte_iter)
+
+        cls.read_num_bytes(byte_iter)
+
+        num_voxels = byte_iter.read_int32()
+
+        voxels = []
+        for _ in range(num_voxels):
+            x = byte_iter.read_byte()
+            y = byte_iter.read_byte()
+            z = byte_iter.read_byte()
+            color_index = byte_iter.read_byte()
+            voxels += [(x, y, z, color_index)]
+
+        return XYZIChunk(voxels)
 
 
 class PaletteChunk(Chunk):
