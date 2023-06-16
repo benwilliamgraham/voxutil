@@ -158,6 +158,10 @@ class MainChunk(Chunk):
         groups: list["GroupChunk"],
         shapes: list["ShapeChunk"],
         materials: list["MaterialChunk"],
+        render_object: Optional["RenderObjectChunk"],
+        render_camera: Optional["RenderCameraChunk"],
+        palette_note: Optional["PaletteNoteChunk"],
+        index_map: Optional["IndexMapChunk"],
     ):
         """MainChunk constructor."""
         self.pack = pack
@@ -167,6 +171,10 @@ class MainChunk(Chunk):
         self.groups = groups
         self.shapes = shapes
         self.materials = materials
+        self.render_object = render_object
+        self.render_camera = render_camera
+        self.palette_note = palette_note
+        self.index_map = index_map
 
     @classmethod
     def read(cls, byte_iter: FileIter) -> "MainChunk":
@@ -180,6 +188,11 @@ class MainChunk(Chunk):
         groups = []
         shapes = []
         materials = []
+        layers = []
+        render_object = None
+        render_camera = None
+        palette_note = None
+        index_map = None
 
         while byte_iter:
             id = byte_iter.peek_bytes(4)
@@ -212,10 +225,33 @@ class MainChunk(Chunk):
             elif id == MaterialChunk.id:
                 material_chunk = MaterialChunk.read(byte_iter)
                 materials += [material_chunk]
+            elif id == LayerChunk.id:
+                layer_chunk = LayerChunk.read(byte_iter)
+                layers += [layer_chunk]
+            elif id == RenderObjectChunk.id:
+                render_object = RenderObjectChunk.read(byte_iter)
+            elif id == RenderCameraChunk.id:
+                render_camera = RenderCameraChunk.read(byte_iter)
+            elif id == PaletteNoteChunk.id:
+                palette_note = PaletteNoteChunk.read(byte_iter)
+            elif id == IndexMapChunk.id:
+                index_map = IndexMapChunk.read(byte_iter)
             else:
                 raise ValueError(f"Invalid chunk ID: {id}")
 
-        return MainChunk(pack, models, palette, transforms, groups, shapes, materials)
+        return MainChunk(
+            pack,
+            models,
+            palette,
+            transforms,
+            groups,
+            shapes,
+            materials,
+            render_object,
+            render_camera,
+            palette_note,
+            index_map,
+        )
 
 
 class PackChunk(Chunk):
@@ -400,10 +436,8 @@ class TransformChunk(Chunk):
             frame_attributes = byte_iter.read_dict()
             frames += [frame_attributes]
 
-        return TransformChunk(
-            node_id, attributes, child_node_id, layer_id, frames
-        )
-    
+        return TransformChunk(node_id, attributes, child_node_id, layer_id, frames)
+
 
 class GroupChunk(Chunk):
     """Group chunk class.
@@ -444,10 +478,8 @@ class GroupChunk(Chunk):
             child_node_id = byte_iter.read_int32()
             child_node_ids += [child_node_id]
 
-        return GroupChunk(
-            node_id, attributes, child_node_ids
-        )
-    
+        return GroupChunk(node_id, attributes, child_node_ids)
+
 
 class ShapeChunk(Chunk):
     """Shape chunk class.
@@ -463,6 +495,8 @@ class ShapeChunk(Chunk):
         (_f : int32)   frame index, start from 0
     }xN
     """
+
+    id = b"nSHP"
 
     def __init__(self, node_id: int, attributes: dict, models: list[tuple[int, dict]]):
         """ShapeChunk constructor."""
@@ -484,6 +518,87 @@ class ShapeChunk(Chunk):
             model_attributes = byte_iter.read_dict()
             models += [(model_id, model_attributes)]
 
-        return ShapeChunk(
-            node_id, attributes, models
-        )
+        return ShapeChunk(node_id, attributes, models)
+
+
+class MaterialChunk(Chunk):
+    """Material chunk class.
+
+    int32	: material id
+    DICT	: material properties
+          (_type : str) _diffuse, _metal, _glass, _emit
+          (_weight : float) range 0 ~ 1
+          (_rough : float)
+          (_spec : float)
+          (_ior : float)
+          (_att : float)
+          (_flux : float)
+          (_plastic)
+    """
+
+    id = b"MATL"
+
+
+class LayerChunk(Chunk):
+    """Layer chunk class.
+
+    int32	: layer id
+    DICT	: layer attribute
+        (_name : string)
+        (_hidden : 0/1)
+    int32	: reserved id, must be -1
+    """
+
+    id = b"LAYR"
+
+
+class RenderObjectChunk(Chunk):
+    """Render Object chunk class.
+
+    DICT	: rendering attributes
+    """
+
+    id = b"rOBJ"
+
+
+class RenderCameraChunk(Chunk):
+    """Render Camera chunk class.
+
+    int32	: camera id
+    DICT	: camera attribute
+        (_mode : string)
+        (_focus : vec(3))
+        (_angle : vec(3))
+        (_radius : int)
+        (_frustum : float)
+        (_fov : int)
+    """
+
+    id = b"rCAM"
+
+
+class PaletteNoteChunk(Chunk):
+    """Palette Note chunk class.
+
+    int32	: num of color names
+
+    // for each name
+    {
+    STRING	: color name
+    }xN
+    """
+
+    id = b"NOTE"
+
+
+class IndexMapChunk(Chunk):
+    """Index Map chunk class.
+
+    size	: 256
+    // for each index
+    {
+    int32	: palette index association
+    }x256
+    """
+
+    id = b"IMAP"
