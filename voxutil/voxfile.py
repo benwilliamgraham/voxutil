@@ -132,6 +132,7 @@ class Chunk:
     """Chunk class."""
 
     id = None
+    has_children = False
 
     @classmethod
     def consume_header(cls, file_iter: FileIter):
@@ -141,7 +142,9 @@ class Chunk:
             raise ValueError(f"Invalid chunk ID: {id}; expected {cls.id}")
 
         file_iter.read_int32()  # consume chunk content size
-        file_iter.read_int32()  # consume child chunk size
+        child_bytes = file_iter.read_int32()  # consume child chunk size
+        if child_bytes and not cls.has_children:
+            raise ValueError(f"Chunk {cls.id} has unexpected children")
 
     def to_chunk_byte_format(self, content: bytes, child_content: bytes) -> bytes:
         """Convert chunk to bytes"""
@@ -182,6 +185,8 @@ class MainChunk(Chunk):
     """
 
     id = b"MAIN"
+
+    has_children = True
 
     def __init__(
         self,
@@ -302,9 +307,6 @@ class MainChunk(Chunk):
             child_content += bytes(model[0])
             child_content += bytes(model[1])
 
-        if self.palette is not None:
-            child_content += bytes(self.palette)
-
         for transform in self.transforms:
             child_content += bytes(transform)
 
@@ -314,11 +316,14 @@ class MainChunk(Chunk):
         for shape in self.shapes:
             child_content += bytes(shape)
 
-        for material in self.materials:
-            child_content += bytes(material)
-
         for layer in self.layers:
             child_content += bytes(layer)
+
+        if self.palette is not None:
+            child_content += bytes(self.palette)
+
+        for material in self.materials:
+            child_content += bytes(material)
 
         for render_object in self.render_objects:
             child_content += bytes(render_object)
