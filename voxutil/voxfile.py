@@ -307,14 +307,7 @@ class MainChunk(Chunk):
             child_content += bytes(model[0])
             child_content += bytes(model[1])
 
-        for transform in self.transforms:
-            child_content += bytes(transform)
-
-        for group in self.groups:
-            child_content += bytes(group)
-
-        for shape in self.shapes:
-            child_content += bytes(shape)
+        # TODO: scene graph
 
         for layer in self.layers:
             child_content += bytes(layer)
