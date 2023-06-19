@@ -85,6 +85,7 @@ class Volume:
         ]
 
     def to_voxfile(self) -> voxfile.VoxFile:
+        color: Optional[Color]
         color_to_index = {}
         color_list = [(0, 0, 0, 255) for _ in range(256)]
         for i, color in enumerate(self.palette.color_count_map.keys()):
