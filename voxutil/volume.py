@@ -28,6 +28,9 @@ class Color:
             and self.a == other.a
         )
 
+    def __hash__(self):
+        return hash((self.r, self.g, self.b, self.a))
+
 
 class Palette:
     """Palette class."""
