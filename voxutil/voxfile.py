@@ -131,7 +131,7 @@ class VoxFile:
 class Chunk:
     """Chunk class."""
 
-    id = None
+    id = b""
     has_children = False
 
     @classmethod
@@ -139,12 +139,12 @@ class Chunk:
         """Check that the next four bytes in the given byte iterator match the chunk ID."""
         id = file_iter.read_bytes(4)
         if id != cls.id:
-            raise ValueError(f"Invalid chunk ID: {id}; expected {cls.id}")
+            raise ValueError(f"Invalid chunk ID: {id!r}; expected {cls.id!r}")
 
         file_iter.read_int32()  # consume chunk content size
         child_bytes = file_iter.read_int32()  # consume child chunk size
         if child_bytes and not cls.has_children:
-            raise ValueError(f"Chunk {cls.id} has unexpected children")
+            raise ValueError(f"Chunk {cls.id!r} has unexpected children")
 
     def to_chunk_byte_format(self, content: bytes, child_content: bytes) -> bytes:
         """Convert chunk to bytes"""
@@ -221,7 +221,7 @@ class MainChunk(Chunk):
         pack = None
         models = []
         palette = None
-        scene_graph = []
+        scene_graph: list[Union["TransformChunk", "GroupChunk", "ShapeChunk"]] = []
         materials = []
         layers = []
         render_objects = []
@@ -241,7 +241,7 @@ class MainChunk(Chunk):
                 id = file_iter.peek_bytes(4)
                 if id != XYZIChunk.id:
                     raise ValueError(
-                        f"Invalid chunk ID: {id}; expected {XYZIChunk.id} following {SizeChunk.id}"
+                        f"Invalid chunk ID: {id!r}; expected {XYZIChunk.id!r} following {SizeChunk.id!r}"
                     )
                 xyzi_chunk = XYZIChunk.read(file_iter)
 
@@ -274,7 +274,7 @@ class MainChunk(Chunk):
             elif id == IndexMapChunk.id:
                 index_map = IndexMapChunk.read(file_iter)
             else:
-                raise ValueError(f"Invalid chunk ID: {id}")
+                raise ValueError(f"Invalid chunk ID: {id!r}")
 
         return MainChunk(
             pack,
@@ -322,7 +322,6 @@ class MainChunk(Chunk):
 
         if self.palette_note is not None:
             child_content += bytes(self.palette_note)
-
 
         return self.to_chunk_byte_format(b"", child_content)
 
