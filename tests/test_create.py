@@ -20,8 +20,6 @@ def test_create_basic():
             [],
             [],
             [],
-            [],
-            [],
             None,
             None,
         ),

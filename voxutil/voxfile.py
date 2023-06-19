@@ -7,7 +7,7 @@ in a way that provides a more Pythonic interface than the raw .vox file format.
 """
 
 import io
-from typing import Optional
+from typing import Optional, Union
 
 
 class FileIter:
@@ -193,9 +193,7 @@ class MainChunk(Chunk):
         pack: Optional["PackChunk"],
         models: list[tuple["SizeChunk", "XYZIChunk"]],
         palette: Optional["PaletteChunk"],
-        transforms: list["TransformChunk"],
-        groups: list["GroupChunk"],
-        shapes: list["ShapeChunk"],
+        scene_graph: list[Union["TransformChunk", "GroupChunk", "ShapeChunk"]],
         materials: list["MaterialChunk"],
         layers: list["LayerChunk"],
         render_objects: list["RenderObjectChunk"],
@@ -207,9 +205,7 @@ class MainChunk(Chunk):
         self.pack = pack
         self.models = models
         self.palette = palette
-        self.transforms = transforms
-        self.groups = groups
-        self.shapes = shapes
+        self.scene_graph = scene_graph
         self.materials = materials
         self.layers = layers
         self.render_objects = render_objects
@@ -225,9 +221,7 @@ class MainChunk(Chunk):
         pack = None
         models = []
         palette = None
-        transforms = []
-        groups = []
-        shapes = []
+        scene_graph = []
         materials = []
         layers = []
         render_objects = []
@@ -256,13 +250,13 @@ class MainChunk(Chunk):
                 palette = PaletteChunk.read(file_iter)
             elif id == TransformChunk.id:
                 transform_chunk = TransformChunk.read(file_iter)
-                transforms += [transform_chunk]
+                scene_graph += [transform_chunk]
             elif id == GroupChunk.id:
                 group_chunk = GroupChunk.read(file_iter)
-                groups += [group_chunk]
+                scene_graph += [group_chunk]
             elif id == ShapeChunk.id:
                 shape_chunk = ShapeChunk.read(file_iter)
-                shapes += [shape_chunk]
+                scene_graph += [shape_chunk]
             elif id == MaterialChunk.id:
                 material_chunk = MaterialChunk.read(file_iter)
                 materials += [material_chunk]
@@ -286,9 +280,7 @@ class MainChunk(Chunk):
             pack,
             models,
             palette,
-            transforms,
-            groups,
-            shapes,
+            scene_graph,
             materials,
             layers,
             render_objects,
@@ -307,13 +299,17 @@ class MainChunk(Chunk):
             child_content += bytes(model[0])
             child_content += bytes(model[1])
 
-        # TODO: scene graph
+        for item in self.scene_graph:
+            child_content += bytes(item)
 
         for layer in self.layers:
             child_content += bytes(layer)
 
         if self.palette is not None:
             child_content += bytes(self.palette)
+
+        if self.index_map is not None:
+            child_content += bytes(self.index_map)
 
         for material in self.materials:
             child_content += bytes(material)
@@ -327,8 +323,6 @@ class MainChunk(Chunk):
         if self.palette_note is not None:
             child_content += bytes(self.palette_note)
 
-        if self.index_map is not None:
-            child_content += bytes(self.index_map)
 
         return self.to_chunk_byte_format(b"", child_content)
 
