@@ -18,6 +18,16 @@ class Color:
         self.b = b
         self.a = a
 
+    def __eq__(self, other):
+        if not isinstance(other, Color):
+            return False
+        return (
+            self.r == other.r
+            and self.g == other.g
+            and self.b == other.b
+            and self.a == other.a
+        )
+
 
 class Palette:
     """Palette class."""
@@ -55,7 +65,7 @@ class Volume:
         for i in range(3):
             if index[i] < 0 or index[i] >= self.size[i]:
                 raise ValueError(
-                    f"Index {i} out of bounds: {index[0]} not in [0, {self.size[0]})"
+                    f"Index {i} out of bounds: {index[i]} not in [0, {self.size[0]})"
                 )
 
         if color is not None:
@@ -75,4 +85,27 @@ class Volume:
         ]
 
     def to_voxfile(self) -> voxfile.VoxFile:
-        pass
+        color_to_index = {}
+        color_list = [(0, 0, 0, 255) for _ in range(256)]
+        for i, color in enumerate(self.palette.color_count_map.keys()):
+            color_to_index[color] = i + 1
+            color_list[i + 1] = (color.r, color.g, color.b, color.a)
+
+        xyzis = []
+        for x in range(self.size[0]):
+            for y in range(self.size[1]):
+                for z in range(self.size[2]):
+                    color = self.get((x, y, z))
+                    if color is not None:
+                        xyzis.append((x, y, z, color_to_index[color]))
+
+        models = [(voxfile.SizeChunk(self.size), voxfile.XYZIChunk(xyzis))]
+
+        palette_chunk = voxfile.PaletteChunk(color_list)
+
+        return voxfile.VoxFile(
+            150,
+            voxfile.MainChunk(
+                None, models, palette_chunk, [], [], [], [], [], None, None
+            ),
+        )
