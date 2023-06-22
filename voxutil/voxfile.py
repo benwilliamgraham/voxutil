@@ -7,93 +7,68 @@ in a way that provides a more Pythonic interface than the raw .vox file format.
 """
 
 import io
-from typing import Optional, Union
+from typing import Optional, Union, Iterator
 
 
-class FileIter:
-    """Iterator for raw .vox file bytes."""
-
-    def __init__(self, bytes_: bytes):
-        """FileIter constructor."""
-        self.bytes_ = bytes_
-        self.index = 0
-
-    def __bool__(self):
-        """Return whether the iterator has reached the end of the file."""
-        return self.index < len(self.bytes_)
-
-    def peek_bytes(self, n: int) -> bytes:
-        """Peek at the next n bytes without advancing the iterator."""
-        return self.bytes_[self.index : self.index + n]
-
-    def peek_byte(self) -> bytes:
-        """Peek at the next byte without advancing the iterator."""
-        return self.peek_bytes(1)
-
-    def read_bytes(self, n: int) -> bytes:
-        """Read n bytes."""
-        bytes_ = self.peek_bytes(n)
-        self.index += n
-        return bytes_
-
-    def read_byte(self) -> bytes:
-        """Read a single byte."""
-        return self.read_bytes(1)
-
-    def peek_int32(self) -> int:
-        """Peek at the next 32-bit integer without advancing the iterator."""
-        return int.from_bytes(self.peek_bytes(4), "little", signed=True)
-
-    def read_int32(self) -> int:
-        """Read a 32-bit integer."""
-        int32 = self.peek_int32()
-        self.index += 4
-        return int32
+class Bytes:
+    """Representative of .vox file bytes."""
 
     @staticmethod
-    def convert_int32(int32: int) -> bytes:
-        """Convert an int32 to bytes."""
+    def read(byte_iter: Iterator[bytes], n: int) -> bytes:
+        """Read n bytes from bytes."""
+        return b"".join(next(byte_iter) for _ in range(n))
+
+
+class Int32:
+    """Representative of .vox file 32-bit integers."""
+
+    @staticmethod
+    def read(byte_iter: Iterator[bytes]) -> int:
+        """Read a 32-bit integer from bytes."""
+        return int.from_bytes(Bytes.read(byte_iter, 4), "little", signed=True)
+
+    @staticmethod
+    def write(int32: int) -> bytes:
+        """Write a 32-bit integer to bytes."""
         return int32.to_bytes(4, "little", signed=True)
 
-    def read_string(self) -> str:
-        """Read a string."""
-        length = self.read_int32()
-        return self.read_bytes(length).decode("utf-8")
+
+class String:
+    """Representative of .vox file strings."""
 
     @staticmethod
-    def convert_string(string: str) -> bytes:
-        """Convert a string to bytes"""
-        bytes_ = len(string).to_bytes(4, "little")
-        bytes_ += bytes(string, "utf-8")
-        return bytes_
+    def read(byte_iter: Iterator[bytes]) -> str:
+        """Read a string from bytes."""
+        length = Int32.read(byte_iter)
+        return Bytes.read(byte_iter, length).decode("utf-8")
 
-    def read_dict(self) -> dict:
-        """Read a dictionary."""
-        length = self.read_int32()
+    @staticmethod
+    def write(string: str) -> bytes:
+        """Write a string to bytes."""
+        return Int32.write(len(string)) + bytes(string, "utf-8")
+
+
+class Dict:
+    """Representative of .vox file dictionaries."""
+
+    @staticmethod
+    def read(byte_iter: Iterator[bytes]) -> dict:
+        """Read a dictionary from bytes."""
+        length = Int32.read(byte_iter)
         dict_ = {}
         for _ in range(length):
-            key = self.read_string()
-            value = self.read_string()
+            key = String.read(byte_iter)
+            value = String.read(byte_iter)
             dict_[key] = value
         return dict_
 
     @staticmethod
-    def convert_dict(dict_: dict) -> bytes:
-        """Convert a dictionary to bytes."""
-        bytes_ = len(dict_).to_bytes(4, "little")
+    def write(dict_: dict) -> bytes:
+        """Write a dictionary to bytes."""
+        bytes_ = Int32.write(len(dict_))
         for key, value in dict_.items():
-            bytes_ += FileIter.convert_string(key)
-            bytes_ += FileIter.convert_string(value)
+            bytes_ += String.write(key) + String.write(value)
         return bytes_
-
-    def read_rotation(self) -> int:
-        """Read a rotation."""
-        return int.from_bytes(self.read_byte(), "little")
-
-    @staticmethod
-    def convert_rotation(r: int) -> bytes:
-        """Convert a rotation to bytes."""
-        return r.to_bytes(1, "little")
 
 
 class VoxFile:
@@ -108,15 +83,15 @@ class VoxFile:
     def read(path: str) -> "VoxFile":
         """Read a .vox file from the given path."""
         with open(path, "rb") as f:
-            file_iter = FileIter(f.read())
+            byte_iter = iter(f.read())
 
-            header = file_iter.read_bytes(4)
+            header = Bytes.read(byte_iter, 4)
             if header != b"VOX ":
                 raise ValueError("Invalid .vox file header.")
 
-            version = file_iter.read_int32()
+            version = Int32.read(byte_iter)
 
-            main = MainChunk.read(file_iter)
+            main = MainChunk.read(byte_iter)
 
             return VoxFile(version, main)
 
@@ -124,7 +99,7 @@ class VoxFile:
         """Write a .vox file to the given path."""
         with open(path, "wb") as f:
             f.write(b"VOX ")
-            f.write(FileIter.convert_int32(self.version))
+            f.write(Int32.write(self.version))
             f.write(bytes(self.main))
 
 
@@ -135,14 +110,14 @@ class Chunk:
     has_children = False
 
     @classmethod
-    def consume_header(cls, file_iter: FileIter):
+    def consume_header(cls, byte_iter: Iterator[bytes]):
         """Check that the next four bytes in the given byte iterator match the chunk ID."""
-        id = file_iter.read_bytes(4)
+        id = byte_iter.read_bytes(4)
         if id != cls.id:
             raise ValueError(f"Invalid chunk ID: {id!r}; expected {cls.id!r}")
 
-        file_iter.read_int32()  # consume chunk content size
-        child_bytes = file_iter.read_int32()  # consume child chunk size
+        byte_iter.read_int32()  # consume chunk content size
+        child_bytes = byte_iter.read_int32()  # consume child chunk size
         if child_bytes and not cls.has_children:
             raise ValueError(f"Chunk {cls.id!r} has unexpected children")
 
@@ -150,8 +125,8 @@ class Chunk:
         """Convert chunk to bytes"""
         bytes_ = self.id
 
-        bytes_ += FileIter.convert_int32(len(content))
-        bytes_ += FileIter.convert_int32(len(child_content))
+        bytes_ += Int32.read(len(content))
+        bytes_ += Int32.read(len(child_content))
 
         bytes_ += content
         bytes_ += child_content
@@ -214,9 +189,9 @@ class MainChunk(Chunk):
         self.index_map = index_map
 
     @classmethod
-    def read(cls, file_iter: FileIter) -> "MainChunk":
+    def read(cls, byte_iter: Iterator[bytes]) -> "MainChunk":
         """Read a main chunk from the given byte iterator."""
-        cls.consume_header(file_iter)
+        cls.consume_header(byte_iter)
 
         pack = None
         models = []
@@ -229,50 +204,50 @@ class MainChunk(Chunk):
         palette_note = None
         index_map = None
 
-        while file_iter:
-            id = file_iter.peek_bytes(4)
+        while byte_iter:
+            id = byte_iter.peek_bytes(4)
 
             if id == PackChunk.id:
-                pack = PackChunk.read(file_iter)
+                pack = PackChunk.read(byte_iter)
             elif id == SizeChunk.id:
-                size_chunk = SizeChunk.read(file_iter)
+                size_chunk = SizeChunk.read(byte_iter)
 
                 # assume next chunk is XYZI chunk
-                id = file_iter.peek_bytes(4)
+                id = byte_iter.peek_bytes(4)
                 if id != XYZIChunk.id:
                     raise ValueError(
                         f"Invalid chunk ID: {id!r}; expected {XYZIChunk.id!r} following {SizeChunk.id!r}"
                     )
-                xyzi_chunk = XYZIChunk.read(file_iter)
+                xyzi_chunk = XYZIChunk.read(byte_iter)
 
                 models += [(size_chunk, xyzi_chunk)]
             elif id == PaletteChunk.id:
-                palette = PaletteChunk.read(file_iter)
+                palette = PaletteChunk.read(byte_iter)
             elif id == TransformChunk.id:
-                transform_chunk = TransformChunk.read(file_iter)
+                transform_chunk = TransformChunk.read(byte_iter)
                 scene_graph += [transform_chunk]
             elif id == GroupChunk.id:
-                group_chunk = GroupChunk.read(file_iter)
+                group_chunk = GroupChunk.read(byte_iter)
                 scene_graph += [group_chunk]
             elif id == ShapeChunk.id:
-                shape_chunk = ShapeChunk.read(file_iter)
+                shape_chunk = ShapeChunk.read(byte_iter)
                 scene_graph += [shape_chunk]
             elif id == MaterialChunk.id:
-                material_chunk = MaterialChunk.read(file_iter)
+                material_chunk = MaterialChunk.read(byte_iter)
                 materials += [material_chunk]
             elif id == LayerChunk.id:
-                layer_chunk = LayerChunk.read(file_iter)
+                layer_chunk = LayerChunk.read(byte_iter)
                 layers += [layer_chunk]
             elif id == RenderObjectChunk.id:
-                render_object = RenderObjectChunk.read(file_iter)
+                render_object = RenderObjectChunk.read(byte_iter)
                 render_objects += [render_object]
             elif id == RenderCameraChunk.id:
-                render_camera = RenderCameraChunk.read(file_iter)
+                render_camera = RenderCameraChunk.read(byte_iter)
                 render_cameras += [render_camera]
             elif id == PaletteNoteChunk.id:
-                palette_note = PaletteNoteChunk.read(file_iter)
+                palette_note = PaletteNoteChunk.read(byte_iter)
             elif id == IndexMapChunk.id:
-                index_map = IndexMapChunk.read(file_iter)
+                index_map = IndexMapChunk.read(byte_iter)
             else:
                 raise ValueError(f"Invalid chunk ID: {id!r}")
 
@@ -343,11 +318,11 @@ class PackChunk(Chunk):
         self.num_models = num_models
 
     @classmethod
-    def read(cls, file_iter: FileIter) -> "PackChunk":
+    def read(cls, byte_iter: Iterator[bytes]) -> "PackChunk":
         """Read a pack chunk from the given byte iterator."""
-        cls.consume_header(file_iter)
+        cls.consume_header(byte_iter)
 
-        num_models = file_iter.read_int32()
+        num_models = byte_iter.read_int32()
 
         return PackChunk(num_models)
 
@@ -371,20 +346,20 @@ class SizeChunk(Chunk):
         self.size = size
 
     @classmethod
-    def read(cls, file_iter: FileIter) -> "SizeChunk":
-        cls.consume_header(file_iter)
+    def read(cls, byte_iter: Iterator[bytes]) -> "SizeChunk":
+        cls.consume_header(byte_iter)
 
-        x = file_iter.read_int32()
-        y = file_iter.read_int32()
-        z = file_iter.read_int32()
+        x = byte_iter.read_int32()
+        y = byte_iter.read_int32()
+        z = byte_iter.read_int32()
 
         return SizeChunk((x, y, z))
 
     def __bytes__(self):
         content = (
-            FileIter.convert_int32(self.size[0])
-            + FileIter.convert_int32(self.size[1])
-            + FileIter.convert_int32(self.size[2])
+            Int32.read(self.size[0])
+            + Int32.read(self.size[1])
+            + Int32.read(self.size[2])
         )
 
         return self.to_chunk_byte_format(content, b"")
@@ -408,23 +383,23 @@ class XYZIChunk(Chunk):
         self.voxels = voxels
 
     @classmethod
-    def read(cls, file_iter: FileIter) -> "XYZIChunk":
-        cls.consume_header(file_iter)
+    def read(cls, byte_iter: Iterator[bytes]) -> "XYZIChunk":
+        cls.consume_header(byte_iter)
 
-        num_voxels = file_iter.read_int32()
+        num_voxels = byte_iter.read_int32()
 
         voxels = []
         for _ in range(num_voxels):
-            x = int.from_bytes(file_iter.read_byte(), "little")
-            y = int.from_bytes(file_iter.read_byte(), "little")
-            z = int.from_bytes(file_iter.read_byte(), "little")
-            color_index = int.from_bytes(file_iter.read_byte(), "little")
+            x = int.from_bytes(byte_iter.read_byte(), "little")
+            y = int.from_bytes(byte_iter.read_byte(), "little")
+            z = int.from_bytes(byte_iter.read_byte(), "little")
+            color_index = int.from_bytes(byte_iter.read_byte(), "little")
             voxels += [(x, y, z, color_index)]
 
         return XYZIChunk(voxels)
 
     def __bytes__(self):
-        content = FileIter.convert_int32(len(self.voxels))
+        content = Int32.read(len(self.voxels))
 
         for voxel in self.voxels:
             for val in voxel:
@@ -456,19 +431,19 @@ class PaletteChunk(Chunk):
         self.palette = palette
 
     @classmethod
-    def read(cls, file_iter: FileIter) -> "PaletteChunk":
-        cls.consume_header(file_iter)
+    def read(cls, byte_iter: Iterator[bytes]) -> "PaletteChunk":
+        cls.consume_header(byte_iter)
 
         palette = [(0, 0, 0, 0)]
         for _ in range(255):
-            r = int.from_bytes(file_iter.read_byte(), "little")
-            g = int.from_bytes(file_iter.read_byte(), "little")
-            b = int.from_bytes(file_iter.read_byte(), "little")
-            a = int.from_bytes(file_iter.read_byte(), "little")
+            r = int.from_bytes(byte_iter.read_byte(), "little")
+            g = int.from_bytes(byte_iter.read_byte(), "little")
+            b = int.from_bytes(byte_iter.read_byte(), "little")
+            a = int.from_bytes(byte_iter.read_byte(), "little")
             palette += [(r, g, b, a)]
 
         # for some reason, this still uses 256 bytes, so discard another 4 bytes afterwards
-        file_iter.read_bytes(4)
+        byte_iter.read_bytes(4)
 
         return PaletteChunk(palette)
 
@@ -523,35 +498,35 @@ class TransformChunk(Chunk):
         self.frames = frames
 
     @classmethod
-    def read(cls, file_iter: FileIter) -> "TransformChunk":
-        cls.consume_header(file_iter)
+    def read(cls, byte_iter: Iterator[bytes]) -> "TransformChunk":
+        cls.consume_header(byte_iter)
 
-        node_id = file_iter.read_int32()
-        attributes = file_iter.read_dict()
-        child_node_id = file_iter.read_int32()
-        reserved_id = file_iter.read_int32()
+        node_id = byte_iter.read_int32()
+        attributes = byte_iter.read_dict()
+        child_node_id = byte_iter.read_int32()
+        reserved_id = byte_iter.read_int32()
         if reserved_id != -1:
             raise ValueError(f"Invalid reserved id: {reserved_id}")
-        layer_id = file_iter.read_int32()
-        num_frames = file_iter.read_int32()
+        layer_id = byte_iter.read_int32()
+        num_frames = byte_iter.read_int32()
 
         frames = []
         for _ in range(num_frames):
-            frame_attributes = file_iter.read_dict()
+            frame_attributes = byte_iter.read_dict()
             frames += [frame_attributes]
 
         return TransformChunk(node_id, attributes, child_node_id, layer_id, frames)
 
     def __bytes__(self):
-        content = FileIter.convert_int32(self.node_id)
-        content += FileIter.convert_dict(self.attributes)
-        content += FileIter.convert_int32(self.child_node_id)
-        content += FileIter.convert_int32(-1)
-        content += FileIter.convert_int32(self.layer_id)
-        content += FileIter.convert_int32(len(self.frames))
+        content = Int32.read(self.node_id)
+        content += Dict.read(self.attributes)
+        content += Int32.read(self.child_node_id)
+        content += Int32.read(-1)
+        content += Int32.read(self.layer_id)
+        content += Int32.read(len(self.frames))
 
         for frame in self.frames:
-            content += FileIter.convert_dict(frame)
+            content += Dict.read(frame)
 
         return self.to_chunk_byte_format(content, b"")
 
@@ -583,29 +558,29 @@ class GroupChunk(Chunk):
         self.child_node_ids = child_node_ids
 
     @classmethod
-    def read(cls, file_iter: FileIter) -> "GroupChunk":
-        cls.consume_header(file_iter)
+    def read(cls, byte_iter: Iterator[bytes]) -> "GroupChunk":
+        cls.consume_header(byte_iter)
 
-        node_id = file_iter.read_int32()
-        attributes = file_iter.read_dict()
-        num_children = file_iter.read_int32()
+        node_id = byte_iter.read_int32()
+        attributes = byte_iter.read_dict()
+        num_children = byte_iter.read_int32()
 
         child_node_ids = []
         for _ in range(num_children):
-            child_node_id = file_iter.read_int32()
+            child_node_id = byte_iter.read_int32()
             child_node_ids += [child_node_id]
 
         return GroupChunk(node_id, attributes, child_node_ids)
 
     def __bytes__(self):
-        content = FileIter.convert_int32(self.node_id)
+        content = Int32.read(self.node_id)
 
-        content += FileIter.convert_dict(self.attributes)
+        content += Dict.read(self.attributes)
 
-        content += FileIter.convert_int32(len(self.child_node_ids))
+        content += Int32.read(len(self.child_node_ids))
 
         for child_node_id in self.child_node_ids:
-            content += FileIter.convert_int32(child_node_id)
+            content += Int32.read(child_node_id)
 
         return self.to_chunk_byte_format(content, b"")
 
@@ -634,31 +609,31 @@ class ShapeChunk(Chunk):
         self.models = models
 
     @classmethod
-    def read(cls, file_iter: FileIter) -> "ShapeChunk":
-        cls.consume_header(file_iter)
+    def read(cls, byte_iter: Iterator[bytes]) -> "ShapeChunk":
+        cls.consume_header(byte_iter)
 
-        node_id = file_iter.read_int32()
-        attributes = file_iter.read_dict()
-        num_models = file_iter.read_int32()
+        node_id = byte_iter.read_int32()
+        attributes = byte_iter.read_dict()
+        num_models = byte_iter.read_int32()
 
         models = []
         for _ in range(num_models):
-            model_id = file_iter.read_int32()
-            model_attributes = file_iter.read_dict()
+            model_id = byte_iter.read_int32()
+            model_attributes = byte_iter.read_dict()
             models += [(model_id, model_attributes)]
 
         return ShapeChunk(node_id, attributes, models)
 
     def __bytes__(self):
-        content = FileIter.convert_int32(self.node_id)
+        content = Int32.read(self.node_id)
 
-        content += FileIter.convert_dict(self.attributes)
+        content += Dict.read(self.attributes)
 
-        content += FileIter.convert_int32(len(self.models))
+        content += Int32.read(len(self.models))
 
         for model in self.models:
-            content += FileIter.convert_int32(model[0])
-            content += FileIter.convert_dict(model[1])
+            content += Int32.read(model[0])
+            content += Dict.read(model[1])
 
         return self.to_chunk_byte_format(content, b"")
 
@@ -685,19 +660,19 @@ class MaterialChunk(Chunk):
         self.properties = properties
 
     @classmethod
-    def read(cls, file_iter: FileIter):
-        cls.consume_header(file_iter)
+    def read(cls, byte_iter: Iterator[bytes]):
+        cls.consume_header(byte_iter)
 
-        material_id = file_iter.read_int32()
+        material_id = byte_iter.read_int32()
 
-        properties = file_iter.read_dict()
+        properties = byte_iter.read_dict()
 
         return MaterialChunk(material_id, properties)
 
     def __bytes__(self):
-        content = FileIter.convert_int32(self.material_id)
+        content = Int32.read(self.material_id)
 
-        content += FileIter.convert_dict(self.properties)
+        content += Dict.read(self.properties)
 
         return self.to_chunk_byte_format(content, b"")
 
@@ -719,25 +694,25 @@ class LayerChunk(Chunk):
         self.attribute = attribute
 
     @classmethod
-    def read(cls, file_iter: FileIter):
-        cls.consume_header(file_iter)
+    def read(cls, byte_iter: Iterator[bytes]):
+        cls.consume_header(byte_iter)
 
-        layer_id = file_iter.read_int32()
+        layer_id = byte_iter.read_int32()
 
-        attribute = file_iter.read_dict()
+        attribute = byte_iter.read_dict()
 
-        reserved_id = file_iter.read_int32()
+        reserved_id = byte_iter.read_int32()
         if reserved_id != -1:
             raise ValueError(f"Invalid reserved id: {reserved_id}")
 
         return LayerChunk(layer_id, attribute)
 
     def __bytes__(self):
-        content = FileIter.convert_int32(self.layer_id)
+        content = Int32.read(self.layer_id)
 
-        content += FileIter.convert_dict(self.attribute)
+        content += Dict.read(self.attribute)
 
-        content += FileIter.convert_int32(-1)
+        content += Int32.read(-1)
 
         return self.to_chunk_byte_format(content, b"")
 
@@ -754,15 +729,15 @@ class RenderObjectChunk(Chunk):
         self.attributes = attributes
 
     @classmethod
-    def read(cls, file_iter: FileIter):
-        cls.consume_header(file_iter)
+    def read(cls, byte_iter: Iterator[bytes]):
+        cls.consume_header(byte_iter)
 
-        attributes = file_iter.read_dict()
+        attributes = byte_iter.read_dict()
 
         return RenderObjectChunk(attributes)
 
     def __bytes__(self):
-        content = FileIter.convert_dict(self.attributes)
+        content = Dict.read(self.attributes)
 
         return self.to_chunk_byte_format(content, b"")
 
@@ -787,19 +762,19 @@ class RenderCameraChunk(Chunk):
         self.attribute = attribute
 
     @classmethod
-    def read(cls, file_iter: FileIter):
-        cls.consume_header(file_iter)
+    def read(cls, byte_iter: Iterator[bytes]):
+        cls.consume_header(byte_iter)
 
-        camera_id = file_iter.read_int32()
+        camera_id = byte_iter.read_int32()
 
-        attribute = file_iter.read_dict()
+        attribute = byte_iter.read_dict()
 
         return RenderCameraChunk(camera_id, attribute)
 
     def __bytes__(self):
-        content = FileIter.convert_int32(self.camera_id)
+        content = Int32.read(self.camera_id)
 
-        content += FileIter.convert_dict(self.attribute)
+        content += Dict.read(self.attribute)
 
         return self.to_chunk_byte_format(content, b"")
 
@@ -821,23 +796,23 @@ class PaletteNoteChunk(Chunk):
         self.color_names = color_names
 
     @classmethod
-    def read(cls, file_iter: FileIter):
-        cls.consume_header(file_iter)
+    def read(cls, byte_iter: Iterator[bytes]):
+        cls.consume_header(byte_iter)
 
         color_names = []
 
-        num_color_names = file_iter.read_int32()
+        num_color_names = byte_iter.read_int32()
 
         for _ in range(num_color_names):
-            color_names.append(file_iter.read_string())
+            color_names.append(byte_iter.read_string())
 
         return PaletteNoteChunk(color_names)
 
     def __bytes__(self):
-        content = FileIter.convert_int32(len(self.color_names))
+        content = Int32.read(len(self.color_names))
 
         for color_name in self.color_names:
-            content += FileIter.convert_string(color_name)
+            content += String.read(color_name)
 
         return self.to_chunk_byte_format(content, b"")
 
@@ -861,11 +836,11 @@ class IndexMapChunk(Chunk):
         self.palette_indices = palette_indices
 
     @classmethod
-    def read(cls, file_iter: FileIter):
-        cls.consume_header(file_iter)
+    def read(cls, byte_iter: Iterator[bytes]):
+        cls.consume_header(byte_iter)
 
         palette_indices = [
-            int.from_bytes(file_iter.read_byte(), "little") for _ in range(256)
+            int.from_bytes(byte_iter.read_byte(), "little") for _ in range(256)
         ]
 
         return IndexMapChunk(palette_indices)
